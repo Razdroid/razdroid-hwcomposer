@@ -1,4 +1,4 @@
 razdroid-gralloc
 ================
 
-Android-compatible gralloc for the Raspberry Pi
+Nothing to see here just yet...
