@@ -1,4 +1,4 @@
 razdroid-hwcomposer
 ================
 
-Nothing to see here just yet...
+Try it! It just might work!
