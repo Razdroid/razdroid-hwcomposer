@@ -29,13 +29,20 @@
 #include "bcm_host.h"
 
 #define HWC_DBG 1
-#define ALIGN_UP(x,y)  ((x + (y)-1) & ~((y)-1))
 
+#ifndef ALIGN_UP(x,y)
+#define ALIGN_UP(x,y)  ((x + (y)-1) & ~((y)-1))
+#endif
 /*****************************************************************************/
 
 struct hwc_context_t {
     hwc_composer_device_t device;
 	DISPMANX_DISPLAY_HANDLE_T disp;
+};
+
+struct hwc_layer_rd {
+	hwc_layer_t *layer;
+	uint32_t format;
 };
 
 typedef struct
@@ -73,6 +80,10 @@ hwc_module_t HAL_MODULE_INFO_SYM = {
 };
 
 /*****************************************************************************/
+static void hwc_get_rd_layer(hwc_layer_t *src, struct hwc_layer_rd *dst){
+	dst->layer = src;
+	dst->format = HAL_PIXEL_FORMAT_RGB_565; //XXX: FIX THIS HACK
+}
 
 static void dump_layer(hwc_layer_t const* l) {
     LOGD("\ttype=%d, flags=%08x, handle=%p, tr=%02x, blend=%04x, {%d,%d,%d,%d}, {%d,%d,%d,%d}",
@@ -87,7 +98,7 @@ static void dump_layer(hwc_layer_t const* l) {
             l->displayFrame.bottom);
 }
 
-static bool hwc_can_render_layer(hwc_layer_t *layer)
+static bool hwc_can_render_layer(struct hwc_layer_rd *layer)
 {
     bool ret = false;
 	switch(layer->format){
@@ -103,7 +114,7 @@ static bool hwc_can_render_layer(hwc_layer_t *layer)
 	return ret;
 }
 
-static VC_IMAGE_TYPE_T hwc_format_to_vc_format(hwc_layer_t *layer){
+static VC_IMAGE_TYPE_T hwc_format_to_vc_format(struct hwc_layer_rd *layer){
     VC_IMAGE_TYPE_T ret = VC_IMAGE_RGB565;
 	switch(layer->format){
 	case HAL_PIXEL_FORMAT_RGB_565:
@@ -125,7 +136,9 @@ static void hwc_actually_do_stuff_with_layer(hwc_composer_device_t *dev, hwc_lay
     RECT_VARS_T    *vars;
 	vars = &gRectVars;
 	VC_RECT_T       dst_rect;
-	VC_IMAGE_TYPE_T type = hwc_format_to_vc_format(layer);
+	struct hwc_layer_rd * lr = (struct hwc_layer_rd *)malloc(sizeof(struct hwc_layer_rd));
+	hwc_get_rd_layer(layer, lr);
+	VC_IMAGE_TYPE_T type = hwc_format_to_vc_format(lr);
 
 	VC_DISPMANX_ALPHA_T alpha = { DISPMANX_FLAGS_ALPHA_FROM_SOURCE, 
                              120, /*alpha 0->255*/
@@ -139,24 +152,27 @@ static void hwc_actually_do_stuff_with_layer(hwc_composer_device_t *dev, hwc_lay
 	
 	int dfwidth = layer->displayFrame.left - layer->displayFrame.right;
 	int dfheight = layer->displayFrame.top - layer->displayFrame.bottom;
+	int srcwidth = layer->sourceCrop.left - layer->sourceCrop.right;
+	int srcheight = layer->sourceCrop.top - layer->sourceCrop.bottom;
+
     int dfpitch = ALIGN_UP(dfwidth*2, 32);
 	
 	vars->resource = vc_dispmanx_resource_create( type,
                                                   dfwidth,
                                                   dfheight,
                                                   &vars->vc_image_ptr );
-	vc_dispmanx_rect_set( &dst_rect, 0, 0, dfwidth, dfheight);
+	vc_dispmanx_rect_set( &dst_rect, 0, 0, srcwidth, srcheight);
     int ret = vc_dispmanx_resource_write_data(  vars->resource,
 												type,
 												dfpitch,
-												layer->handle,
+												(void*)layer->handle,
 												&dst_rect );
 
 	if(ret != 0){
 		if(HWC_DBG)	LOGD("vc_dispmanx_resource_write_data failed.");
 		return;
 	}
-	vc_dispmanx_rect_set( &dst_rect, layer->displayFrame.left, layer->displayFrame.top, dfwidth, dfheight);
+	vc_dispmanx_rect_set( &dst_rect, layer->displayFrame.left, layer->displayFrame.top, layer->displayFrame.left+dfwidth, layer->displayFrame.top+dfheight);
 												
 }
 
@@ -172,7 +188,9 @@ static int hwc_prepare(hwc_composer_device_t *dev, hwc_layer_list_t* list) {
     if (list && (list->flags & HWC_GEOMETRY_CHANGED)) {
         for (size_t i=0 ; i<list->numHwLayers ; i++) {
             //dump_layer(&list->hwLayers[i]);
-			if(hwc_can_render_layer(&list->hwLayers[i])){
+			struct hwc_layer_rd * lr = (struct hwc_layer_rd *)malloc(sizeof(struct hwc_layer_rd));
+			hwc_get_rd_layer(&list->hwLayers[i], lr);
+			if(hwc_can_render_layer(lr)){
 				if(HWC_DBG)	LOGD("Layer %d = OVERLAY!", i);
 				list->hwLayers[i].compositionType = HWC_OVERLAY;
 			}else{
