@@ -58,6 +58,7 @@ typedef struct
 } RECT_VARS_T;
 
 static RECT_VARS_T  gRectVars;
+static hwc_layer_rd * lr
 
 
 static int hwc_device_open(const struct hw_module_t* module, const char* name,
@@ -136,7 +137,6 @@ static void hwc_actually_do_stuff_with_layer(hwc_composer_device_t *dev, hwc_lay
     RECT_VARS_T    *vars;
 	vars = &gRectVars;
 	VC_RECT_T       dst_rect;
-	struct hwc_layer_rd * lr = (struct hwc_layer_rd *)malloc(sizeof(struct hwc_layer_rd));
 	hwc_get_rd_layer(layer, lr);
 	VC_IMAGE_TYPE_T type = hwc_format_to_vc_format(lr);
 
@@ -243,6 +243,7 @@ static int hwc_device_close(struct hw_device_t *dev)
     if (ctx) {
         free(ctx);
     }
+    free(lr);
     return 0;
 }
 
@@ -274,6 +275,7 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
 		bcm_host_init();
 		
 	    dev->disp = vc_dispmanx_display_open( 0 );
+	lr = (struct hwc_layer_rd *)malloc(sizeof(struct hwc_layer_rd));
 
     }
     return status;
